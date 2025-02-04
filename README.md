@@ -1,4 +1,4 @@
-#Requirements </br>
+Dependencies </br>
 altgraph==0.17.4 </br>
 macholib==1.16.3 </br>
 modulegraph==0.19.6 </br>
