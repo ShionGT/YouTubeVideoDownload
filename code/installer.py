@@ -12,61 +12,54 @@ class YouTubeDownloaderApp:
         self.root.title("YouTube Downloader")
         self.root.geometry("600x450")
         self.root.resizable(True, True)
-        self.root.configure(bg="#1a0d2b")  # Deep purple background
+        self.root.configure(bg="#1a0d2b")
 
         self.process = None
         self.is_paused = False
-        self.download_thread = None
+        self.active_downloads = 0  # Track number of active downloads
+        self.lock = threading.Lock()  # Thread-safe state updates
 
-        # UI Setup
         self._setup_ui()
 
     def _setup_ui(self):
-        # Style configuration for futuristic look
         style = ttk.Style()
         style.theme_use('clam')
 
-        # Custom button style with curved edges
         style.configure("Neon.TButton",
                         font=("VCR OSD Mono", 12),
-                        background="#ff00ff",  # Neon pink
+                        background="#ff00ff",
                         foreground="white",
                         borderwidth=0,
                         padding=8,
                         relief="flat")
         style.map("Neon.TButton",
-                  background=[("active", "#00ffff")])  # Neon cyan on hover
+                  background=[("active", "#00ffff")])
 
-        # Entry style
         style.configure("Neon.TEntry",
                         fieldbackground="#2a1a4a",
                         foreground="white",
                         borderwidth=0,
                         padding=5)
 
-        # Main frame with rounded corners simulation
         main_frame = tk.Frame(self.root, bg="#1a0d2b", bd=0)
         main_frame.pack(pady=20, padx=20, fill="both", expand=True)
 
-        # Header
         tk.Label(main_frame,
                  text="YouTube Video Downloader",
                  font=("VCR OSD Mono", 24),
-                 fg="#00ffff",  # Cyan
+                 fg="#00ffff",
                  bg="#1a0d2b").pack(pady=(0, 20))
 
-        # URL Section
         tk.Label(main_frame,
                  text="Video URL",
                  font=("VCR OSD Mono", 12),
-                 fg="#ff00ff",  # Pink
+                 fg="#ff00ff",
                  bg="#1a0d2b").pack()
         self.entry_url = ttk.Entry(main_frame,
                                    style="Neon.TEntry",
                                    width=50)
         self.entry_url.pack(pady=5)
 
-        # Save Path Section
         tk.Label(main_frame,
                  text="Destination",
                  font=("VCR OSD Mono", 12),
@@ -83,7 +76,6 @@ class YouTubeDownloaderApp:
                    style="Neon.TButton",
                    command=self.browse_path).pack(side=tk.RIGHT)
 
-        # Control Buttons
         self.button_download = ttk.Button(main_frame,
                                           text="Download",
                                           style="Neon.TButton",
@@ -97,9 +89,8 @@ class YouTubeDownloaderApp:
                                        state=tk.DISABLED)
         self.button_pause.pack(pady=10)
 
-        # Status Displays
         self.label_status = tk.Label(main_frame,
-                                     text="",
+                                     text="Ready",
                                      font=("VCR OSD Mono", 10),
                                      fg="#00ffff",
                                      bg="#1a0d2b")
@@ -112,7 +103,6 @@ class YouTubeDownloaderApp:
                                        bg="#1a0d2b")
         self.label_progress.pack()
 
-        # Neon glow effect (simple animation)
         self._glow_effect()
 
     def _glow_effect(self):
@@ -135,13 +125,16 @@ class YouTubeDownloaderApp:
                                  parent=self.root)
             return
 
-        self._update_ui_state(downloading=True)
-        self.download_thread = threading.Thread(target=self._download_video,
-                                                args=(url, save_path), daemon=True)
-        self.download_thread.start()
+        with self.lock:
+            self.active_downloads += 1
+            self._update_ui_state(downloading=True)
+
+        threading.Thread(target=self._download_video,
+                         args=(url, save_path), daemon=True).start()
 
     def _download_video(self, url, save_path):
         try:
+            self._update_status("Downloading", "#00ffff")
             ydl_opts = {
                 'outtmpl': os.path.join(save_path, '%(title)s.%(ext)s'),
                 'progress_hooks': [self._progress_hook],
@@ -159,7 +152,10 @@ class YouTubeDownloaderApp:
                                 lambda: messagebox.showerror("Error", f"Download failed: {e}",
                                                              parent=self.root))
         finally:
-            self._update_ui_state(downloading=False)
+            with self.lock:
+                self.active_downloads -= 1
+                if self.active_downloads == 0:
+                    self._update_ui_state(downloading=False)
 
     def _progress_hook(self, d):
         if d['status'] == 'downloading':
@@ -169,25 +165,26 @@ class YouTubeDownloaderApp:
             self.label_progress.config(text=f"{downloaded:,} / {total:,} bytes | {percentage:.1f}%")
 
     def toggle_pause(self):
-        if not self.download_thread:
-            return
-
         self.is_paused = not self.is_paused
         self.button_pause.config(text="Resume" if self.is_paused else "Pause")
         self.label_status.config(text="Paused" if self.is_paused else "Downloading",
                                  fg="#ffff00" if self.is_paused else "#00ffff")
 
     def _update_ui_state(self, downloading):
-        self.button_download.config(state="disabled" if downloading else "normal")
-        self.button_pause.config(state="normal" if downloading else "disabled")
-        self.is_paused = False
-        if not downloading:
-            self.button_pause.config(text="Pause")
-            self.label_progress.config(text="")
-            self.label_status.config(text="Ready", fg="#00ffff")
+        with self.lock:
+            self.button_download.config(state="disabled" if downloading else "normal")
+            self.button_pause.config(state="normal" if downloading else "disabled")
+            self.is_paused = False
+            if not downloading and self.active_downloads == 0:
+                self.button_pause.config(text="Pause")
+                self.label_progress.config(text="")
+                self.label_status.config(text="Ready", fg="#00ffff")
+            elif downloading:
+                self.label_status.config(text="Downloading", fg="#00ffff")
 
     def _update_status(self, text, color, callback=None):
-        self.label_status.config(text=text, fg=color)
+        with self.lock:
+            self.label_status.config(text=text, fg=color)
         if callback:
             self.root.after(0, callback)
 
