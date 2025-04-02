@@ -13,7 +13,9 @@ class YouTubeDownloaderApp:
         self.root.configure(bg="#1a0d2b")
 
         self.is_paused = False
-        self.active_downloads = 0  # Track active downloads
+        self.active_downloads = 0
+        self.download_thread = None  # To track the download thread
+        self.should_cancel = False  # Flag to cancel download
 
         self._setup_ui()
 
@@ -102,9 +104,14 @@ class YouTubeDownloaderApp:
         self._glow_effect()
 
     def _glow_effect(self):
-        colors = ["#ff00ff", "#00ffff", "#ff00ff"]
+        # Include all possible colors used in the app
+        colors = ["#ff00ff", "#00ffff", "#ff4444", "#00ff00", "#ffff00"]
         current = self.label_status.cget("fg")
-        next_color = colors[(colors.index(current) + 1) % len(colors)]
+        # Fallback to first color if current isn't in list (initial case)
+        if current not in colors:
+            next_color = colors[0]
+        else:
+            next_color = colors[(colors.index(current) + 1) % len(colors)]
         self.label_status.config(fg=next_color)
         self.root.after(1000, self._glow_effect)
 
@@ -122,43 +129,46 @@ class YouTubeDownloaderApp:
             return
 
         self.active_downloads += 1
+        self.should_cancel = False
         self._update_ui_state(downloading=True)
-        print(f"Starting download: {url}")  # Debug
 
         # Start the download in a new thread
-        threading.Thread(target=self._download_video,
-                         args=(url, save_path),
-                         daemon=True).start()
+        self.download_thread = threading.Thread(target=self._download_video,
+                                                args=(url, save_path),
+                                                daemon=True)
+        self.download_thread.start()
 
     def _download_video(self, url, save_path):
         try:
-            print(f"Download thread running for: {url}")  # Debug
             self._update_status("Downloading", "#00ffff")
             ydl_opts = {
                 'outtmpl': os.path.join(save_path, '%(title)s.%(ext)s'),
                 'progress_hooks': [self._progress_hook],
-                'quiet': False,  # Set to False for debug output
-                'noprogress': False,  # Show progress in console
+                'quiet': False,
+                'noprogress': False,
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                while self.is_paused and not self.should_cancel:
+                    threading.Event().wait(1)  # Wait while paused
+                if self.should_cancel:
+                    raise Exception("Download canceled by user")
                 ydl.download([url])
 
-            print(f"Download finished: {url}")  # Debug
             self._update_status("Download Complete!", "#00ff00",
                                 lambda: messagebox.showinfo("Success", "Download finished!",
                                                             parent=self.root))
         except Exception as e:
-            print(f"Download error: {e}")  # Debug
             self._update_status(f"Error: {e}", "#ff4444",
                                 lambda: messagebox.showerror("Error", f"Download failed: {e}",
                                                              parent=self.root))
         finally:
             self.active_downloads -= 1
-            print(f"Active downloads: {self.active_downloads}")  # Debug
             if self.active_downloads == 0:
                 self._update_ui_state(downloading=False)
 
     def _progress_hook(self, d):
+        if self.is_paused or self.should_cancel:
+            return
         if d['status'] == 'downloading':
             total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
             downloaded = d['downloaded_bytes']
@@ -170,6 +180,8 @@ class YouTubeDownloaderApp:
         self.button_pause.config(text="Resume" if self.is_paused else "Pause")
         self._update_status("Paused" if self.is_paused else "Downloading",
                             "#ffff00" if self.is_paused else "#00ffff")
+        if not self.is_paused:
+            self.should_cancel = False  # Reset cancel flag when resuming
 
     def _update_ui_state(self, downloading):
         self.button_download.config(state="disabled" if downloading else "normal")
@@ -183,7 +195,6 @@ class YouTubeDownloaderApp:
             self._update_status("Ready", "#00ffff")
 
     def _update_status(self, text, color, callback=None):
-        # Use root.after to ensure thread-safe UI updates
         self.root.after(0, lambda: self.label_status.config(text=text, fg=color))
         if callback:
             self.root.after(0, callback)
