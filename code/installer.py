@@ -2,9 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
 import os
-from functools import partial
 import yt_dlp
-
 
 class YouTubeDownloaderApp:
     def __init__(self, root):
@@ -14,10 +12,8 @@ class YouTubeDownloaderApp:
         self.root.resizable(True, True)
         self.root.configure(bg="#1a0d2b")
 
-        self.process = None
         self.is_paused = False
-        self.active_downloads = 0  # Track number of active downloads
-        self.lock = threading.Lock()  # Thread-safe state updates
+        self.active_downloads = 0  # Track active downloads
 
         self._setup_ui()
 
@@ -125,37 +121,42 @@ class YouTubeDownloaderApp:
                                  parent=self.root)
             return
 
-        with self.lock:
-            self.active_downloads += 1
-            self._update_ui_state(downloading=True)
+        self.active_downloads += 1
+        self._update_ui_state(downloading=True)
+        print(f"Starting download: {url}")  # Debug
 
+        # Start the download in a new thread
         threading.Thread(target=self._download_video,
-                         args=(url, save_path), daemon=True).start()
+                         args=(url, save_path),
+                         daemon=True).start()
 
     def _download_video(self, url, save_path):
         try:
+            print(f"Download thread running for: {url}")  # Debug
             self._update_status("Downloading", "#00ffff")
             ydl_opts = {
                 'outtmpl': os.path.join(save_path, '%(title)s.%(ext)s'),
                 'progress_hooks': [self._progress_hook],
-                'quiet': True,
-                'noprogress': True,
+                'quiet': False,  # Set to False for debug output
+                'noprogress': False,  # Show progress in console
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
 
+            print(f"Download finished: {url}")  # Debug
             self._update_status("Download Complete!", "#00ff00",
                                 lambda: messagebox.showinfo("Success", "Download finished!",
                                                             parent=self.root))
         except Exception as e:
+            print(f"Download error: {e}")  # Debug
             self._update_status(f"Error: {e}", "#ff4444",
                                 lambda: messagebox.showerror("Error", f"Download failed: {e}",
                                                              parent=self.root))
         finally:
-            with self.lock:
-                self.active_downloads -= 1
-                if self.active_downloads == 0:
-                    self._update_ui_state(downloading=False)
+            self.active_downloads -= 1
+            print(f"Active downloads: {self.active_downloads}")  # Debug
+            if self.active_downloads == 0:
+                self._update_ui_state(downloading=False)
 
     def _progress_hook(self, d):
         if d['status'] == 'downloading':
@@ -167,27 +168,25 @@ class YouTubeDownloaderApp:
     def toggle_pause(self):
         self.is_paused = not self.is_paused
         self.button_pause.config(text="Resume" if self.is_paused else "Pause")
-        self.label_status.config(text="Paused" if self.is_paused else "Downloading",
-                                 fg="#ffff00" if self.is_paused else "#00ffff")
+        self._update_status("Paused" if self.is_paused else "Downloading",
+                            "#ffff00" if self.is_paused else "#00ffff")
 
     def _update_ui_state(self, downloading):
-        with self.lock:
-            self.button_download.config(state="disabled" if downloading else "normal")
-            self.button_pause.config(state="normal" if downloading else "disabled")
-            self.is_paused = False
-            if not downloading and self.active_downloads == 0:
-                self.button_pause.config(text="Pause")
-                self.label_progress.config(text="")
-                self.label_status.config(text="Ready", fg="#00ffff")
-            elif downloading:
-                self.label_status.config(text="Downloading", fg="#00ffff")
+        self.button_download.config(state="disabled" if downloading else "normal")
+        self.button_pause.config(state="normal" if downloading else "disabled")
+        self.is_paused = False
+        if downloading:
+            self._update_status("Downloading", "#00ffff")
+        elif self.active_downloads == 0:
+            self.button_pause.config(text="Pause")
+            self.label_progress.config(text="")
+            self._update_status("Ready", "#00ffff")
 
     def _update_status(self, text, color, callback=None):
-        with self.lock:
-            self.label_status.config(text=text, fg=color)
+        # Use root.after to ensure thread-safe UI updates
+        self.root.after(0, lambda: self.label_status.config(text=text, fg=color))
         if callback:
             self.root.after(0, callback)
-
 
 if __name__ == "__main__":
     root = tk.Tk()
