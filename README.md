@@ -1,8 +1,8 @@
 # YouTube Video Downloader
 
 ## Installation
-1. Go to https://github.com/ShionGT/YouTubeVideoDownload/releases
-2. Follow the instruction there!
+1. Go [here](https://www.ffmpeg.org/download.html), and download ffmpeg required for yt-dlp
+2. Go [here](https://github.com/ShionGT/YouTubeVideoDownload/releases), and follow the instruction there
 
 ## Overview
 
