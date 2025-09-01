@@ -10,7 +10,7 @@ This is a simple desktop application that allows you to download YouTube videos 
 
 ## Features
 
-- Download YouTube videos or extract audio as MP3.
+- Download YouTube videos.
 - User-friendly GUI built with CustomTkinter/Tkinter.
 - Supports high-quality downloads via yt-dlp.
 - Cross-platform: Separate builds for macOS and Windows.
@@ -19,7 +19,6 @@ This is a simple desktop application that allows you to download YouTube videos 
 
 1. Launch the application.
 2. Paste the YouTube video URL into the input field.
-3. Choose the desired format (e.g., video as WebM or audio as MP3).
 4. Select the download location.
 5. Click "Download" and wait for the process to complete.
 
@@ -39,8 +38,6 @@ The following libraries were used to build this application:
 - darkdetect==0.8.0
 - packaging==25.0
 - pefile==2024.8.26
-- pyinstaller==6.15.0
-- pyinstaller-hooks-contrib==2025.8
 - pytube==15.0.0
 - pywin32-ctypes==0.2.3
 - setuptools==80.9.0
